@@ -273,12 +273,13 @@ app.post(
   "/api/login",
   passport.authenticate("local", { session: false }),
   (req, res) => {
+    console.log("🚀 ~ req:", req.user)
     // Generate a JWT token upon successful login
     const token = jwt.sign({ sub: req.user._id }, "your-secret-key", {
       expiresIn: "1h",
     });
 
-    res.json({ token, userId : req.user._id  });
+    res.json({ token, userId : req.user._id, publicKey : req.user.publicKey    });
   }
 );
 
