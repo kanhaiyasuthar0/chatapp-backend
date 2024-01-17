@@ -22,8 +22,8 @@ const upload = multer({ dest: 'uploads/' }); // This will save files to a folder
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    // origin: "http://localhost:3000", // This should match the URL of your React app
-    origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
+    origin: "http://localhost:3000", // This should match the URL of your React app
+    // origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
     methods: ["GET", "POST"],
   },
 });
@@ -105,6 +105,11 @@ const UserSchema = new mongoose.Schema({
     unique: true, // This ensures that the username is unique in the database
     required: true
   },
+  mobile : {
+    type : Number, 
+    required: true
+  }
+  ,
   password: {
     type: String,
     required: true
@@ -245,7 +250,7 @@ app.post("/api/register", async (req, res) => {
   session.startTransaction(); // Start the transaction
 
   try {
-    const { username, password, publicKey } = req.body;
+    const { username, password, publicKey, mobile } = req.body;
 
     // Check if the username already exists within the transaction
     const existingUser = await User.findOne({ username }).session(session);
@@ -262,6 +267,7 @@ app.post("/api/register", async (req, res) => {
       username,
       password: hashedPassword,
       publicKey,
+      mobile
     });
 
     // Save the user to the database within the transaction
@@ -288,17 +294,39 @@ app.post("/api/users/:userId/add-friend", async (req, res) => {
     const friendId = req.body.friendId; // ID of the friend to add 
 
     const user = await User.findById(userId);
-    if (!user) {
+    if (!user ) {
       return res.status(404).send("User not found");
     }
-
-    // Add friendId to the user's friends list if not already present
-    if (!user.friends.includes(friendId)) {
-      user.friends.push(friendId);
-      await user.save();
+    if( friendId == user.mobile ){
+      return res.status(404).send("Cannot add own number")
     }
 
-    res.status(200).send("Friend added successfully");
+     // Find the friend by mobile number
+     const friend = await User.findOne({ mobile: friendId });
+     if (!friend) {
+       return res.status(404).send("Friend not found");
+     }
+
+
+
+     if (!user.friends.includes(friend._id)) {
+      user.friends.push(friend._id);
+      friend.friends.push(user._id);
+      await user.save();
+      await friend.save();
+      res.status(200).send("Friend added successfully");
+    } else {
+      res.status(200).send("Friend already in friends list");
+    }
+ 
+
+    // // Add friendId to the user's friends list if not already present
+    // if (!user.friends.includes(friendId)) {
+    //   user.friends.push(friendId);
+    //   await user.save();
+    // }
+
+    // res.status(200).send("Friend added successfully");
   } catch (error) {
     res.status(500).send("Server error");
   }
