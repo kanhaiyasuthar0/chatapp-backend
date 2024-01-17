@@ -22,8 +22,8 @@ const upload = multer({ dest: 'uploads/' }); // This will save files to a folder
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000", // This should match the URL of your React app
-    // origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
+    // origin: "http://localhost:3000", // This should match the URL of your React app
+    origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
     methods: ["GET", "POST"],
   },
 });
