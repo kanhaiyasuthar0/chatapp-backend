@@ -22,6 +22,7 @@ const upload = multer({ dest: 'uploads/' }); // This will save files to a folder
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
+    // origin: "http://localhost:3000", // This should match the URL of your React app
     origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
     methods: ["GET", "POST"],
   },
@@ -60,7 +61,9 @@ io.on("connection", (socket) => {
   
       io.to(chatRoom).emit('chat message', {
         message: encryptedMessage.message,
-        image: encryptedMessage.image
+        image: encryptedMessage.image,
+        sender: encryptedMessage.sender,
+        receiver: encryptedMessage.receiver,
       });
   })
 
@@ -108,7 +111,7 @@ const UserSchema = new mongoose.Schema({
   },
   publicKey: {
     type: String,
-    required: false
+    required: true
   }, // Known bug: Adding strict type checkings to ensure the required field and uniqueness of the entries
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Array of User IDs
 });
@@ -188,15 +191,15 @@ passport.use(
           return done(null, false, { message: "Incorrect password." });
         }
 
-        // Extract publicKey from the request body
-        const publicKey = req.body.publicKey;
-        console.log("🚀 ~ publicKey:", publicKey)
+        // // Extract publicKey from the request body
+        // const publicKey = req.body.publicKey;
+        // console.log("🚀 ~ publicKey:", publicKey)
         
-        if (publicKey) {
-          // Update the publicKey for the user
-          user.publicKey = publicKey;
-          await user.save();
-        }
+        // if (publicKey) {
+        //   // Update the publicKey for the user
+        //   user.publicKey = publicKey;
+        //   await user.save();
+        // }
 
         return done(null, user);
       } catch (error) {
@@ -347,7 +350,7 @@ app.post(
       expiresIn: "1h",
     });
 
-    res.json({ token, userId : req.user._id, publicKey : req.user.publicKey    });
+    res.json({ token, userId : req.user._id, publicKey : req.user.publicKey , username : req.user.username   });
   }
 );
 
