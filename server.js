@@ -22,7 +22,7 @@ const upload = multer({ dest: 'uploads/' }); // This will save files to a folder
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
+    origin: "http://localhost:3002", // This should match the URL of your React app
     methods: ["GET", "POST"],
   },
 });
@@ -97,9 +97,19 @@ mongoose.connect(
 
 // Define a User model (you can extend this based on your needs)
 const UserSchema = new mongoose.Schema({
-  username: String,
-  password: String,
-  publicKey: String,
+  username: {
+    type: String,
+    unique: true, // This ensures that the username is unique in the database
+    required: true
+  },
+  password: {
+    type: String,
+    required: true
+  },
+  publicKey: {
+    type: String,
+    required: false
+  }, // Known bug: Adding strict type checkings to ensure the required field and uniqueness of the entries
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Array of User IDs
 });
 const User = mongoose.model("User", UserSchema);
@@ -126,26 +136,74 @@ app.use(bodyParser.json());
 app.use(passport.initialize());
 
 // Passport local strategy for username and password login
+// passport.use(
+//   new LocalStrategy(async (username, password, done) => {
+//     try {
+//       const user = await User.findOne({ username });
+
+//       if (!user) {
+//         return done(null, false, { message: "Incorrect username." });
+//       }
+
+//       const passwordMatch = await bcrypt.compare(password, user.password);
+
+//       if (!passwordMatch) {
+//         return done(null, false, { message: "Incorrect password." });
+//       }
+
+//       // / Extract publicKey from the request body
+//       const req = this.passport?._request;
+//       console.log("🚀 ~ newLocalStrategy ~ req:", req)
+//       const publicKey = req?.body?.publicKey;
+//       console.log("🚀 ~ newLocalStrategy ~ publicKey:", publicKey)
+//       console.log("🚀 ~ newLocalStrategy ~ new:", user.publicKey)
+
+//       if (publicKey) {
+//         // Update the publicKey for the user
+//         user.publicKey = publicKey;
+//         await user.save();
+//       }
+
+//       return done(null, user);
+//     } catch (error) {
+//       return done(error);
+//     }
+//   })
+// );
+
 passport.use(
-  new LocalStrategy(async (username, password, done) => {
-    try {
-      const user = await User.findOne({ username });
+  new LocalStrategy(
+    { usernameField: 'username', passwordField: 'password', passReqToCallback: true }, 
+    async (req, username, password, done) => {
+      try {
+        const user = await User.findOne({ username });
 
-      if (!user) {
-        return done(null, false, { message: "Incorrect username." });
+        if (!user) {
+          return done(null, false, { message: "Incorrect username." });
+        }
+
+        const passwordMatch = await bcrypt.compare(password, user.password);
+
+        if (!passwordMatch) {
+          return done(null, false, { message: "Incorrect password." });
+        }
+
+        // Extract publicKey from the request body
+        const publicKey = req.body.publicKey;
+        console.log("🚀 ~ publicKey:", publicKey)
+        
+        if (publicKey) {
+          // Update the publicKey for the user
+          user.publicKey = publicKey;
+          await user.save();
+        }
+
+        return done(null, user);
+      } catch (error) {
+        return done(error);
       }
-
-      const passwordMatch = await bcrypt.compare(password, user.password);
-
-      if (!passwordMatch) {
-        return done(null, false, { message: "Incorrect password." });
-      }
-
-      return done(null, user);
-    } catch (error) {
-      return done(error);
     }
-  })
+  )
 );
 
 // Passport JWT strategy for token-based authentication
@@ -178,14 +236,18 @@ app.get("/api/users/:userId/public-key", async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
+ // known bugs which handles atomicity
 app.post("/api/register", async (req, res) => {
+  const session = await mongoose.startSession(); // Start a session for the transaction
+  session.startTransaction(); // Start the transaction
+
   try {
     const { username, password, publicKey } = req.body;
 
-    // Check if the username already exists
-    const existingUser = await User.findOne({ username });
+    // Check if the username already exists within the transaction
+    const existingUser = await User.findOne({ username }).session(session);
     if (existingUser) {
+      await session.abortTransaction(); // Abort the transaction if username exists
       return res.status(400).json({ message: "Username already exists." });
     }
 
@@ -196,24 +258,31 @@ app.post("/api/register", async (req, res) => {
     const newUser = new User({
       username,
       password: hashedPassword,
-      publicKey, // Save the public key
+      publicKey,
     });
 
-    // Save the user to the database
-    await newUser.save();
+    // Save the user to the database within the transaction
+    await newUser.save({ session });
+
+    await session.commitTransaction(); // Commit the transaction
+    session.endSession(); // End the session
 
     return res.status(201).json({ message: "User registered successfully." });
   } catch (error) {
+    await session.abortTransaction(); // Abort the transaction on error
+    session.endSession(); // End the session
     console.error(error);
     return res.status(500).json({ message: "Internal server error." });
   }
 });
 
+
 // to add a new friend
+// known bug : Adding a friend using can be improvised to mobile number which the other can easily have access to and also once added in the one friend side it can be added to other side as well.
 app.post("/api/users/:userId/add-friend", async (req, res) => {
   try {
     const userId = req.params.userId;
-    const friendId = req.body.friendId; // ID of the friend to add
+    const friendId = req.body.friendId; // ID of the friend to add 
 
     const user = await User.findById(userId);
     if (!user) {
@@ -232,8 +301,7 @@ app.post("/api/users/:userId/add-friend", async (req, res) => {
   }
 });
 
-// to get the list of friends
-
+// to get the list of friends : Known bugs : Here I want to send the id as well or mobile number of friend and also I can send the public key so that extra get call at friend can be easily avoided.
 app.get("/api/users/:userId/friends", async (req, res) => {
   try {
     const userId = req.params.userId;
