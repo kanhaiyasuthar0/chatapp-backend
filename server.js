@@ -15,9 +15,8 @@ const app = express();
 const cors = require("cors");
 app.use(cors());
 
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }); // This will save files to a folder named 'uploads'
-
+const multer = require("multer");
+const upload = multer({ dest: "uploads/" }); // This will save files to a folder named 'uploads'
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -30,13 +29,14 @@ const io = socketIo(server, {
 console.log("🚀 ~ io:", io);
 io.on("connection", (socket) => {
   console.log("A user connected");
+  console.log(`New client connected with socket ID: ${socket.id}`);
 
   socket.on("disconnect", () => {
     console.log("User disconnected");
   });
 
   // Join a chat room
-  socket.on('join chat', (chatRoom) => {
+  socket.on("join chat", (chatRoom) => {
     socket.join(chatRoom);
     console.log(`User joined room: ${chatRoom}`);
   });
@@ -44,46 +44,56 @@ io.on("connection", (socket) => {
     console.log(`Received event: ${event}, with data: ${JSON.stringify(args)}`);
   });
 
-  socket.on('chat message', async (chatData) => {
-    console.log("🚀 ~ socket.on ~ chatData:", chatData)
+  socket.on("chat message", async (chatData) => {
+    console.log("🚀 ~ socket.on ~ chatData:", chatData);
     const { chatRoom, encryptedMessage } = chatData;
-   
-     const newMessage = new ChatMessage({
-        sender: encryptedMessage.sender,
-        receiver: encryptedMessage.receiver,
-        message: encryptedMessage.message,
-        image: encryptedMessage.image 
-      });
-      await newMessage.save();
-    
-      // Broadcast the message
-      // io.emit('chat message', encryptedMessage.message);
-  
-      io.to(chatRoom).emit('chat message', {
-        message: encryptedMessage.message,
-        image: encryptedMessage.image,
-        sender: encryptedMessage.sender,
-        receiver: encryptedMessage.receiver,
-      });
-  })
 
+    const newMessage = new ChatMessage({
+      sender: encryptedMessage.sender,
+      receiver: encryptedMessage.receiver,
+      message: encryptedMessage.message,
+      image: encryptedMessage.image,
+    });
+    await newMessage.save();
+
+    // Broadcast the message
+    // io.emit('chat message', encryptedMessage.message);
+
+    io.to(chatRoom).emit("chat message", {
+      message: encryptedMessage.message,
+      image: encryptedMessage.image,
+      sender: encryptedMessage.sender,
+      receiver: encryptedMessage.receiver,
+    });
+  });
+
+  // Video call
+  // console.log("before call");
+  socket.on("sending signal", ({ userToSignal, signal, callerID }) => {
+    console.log("call user to:", userToSignal);
+    // console.log("signalData:", signal);
+    io.to(userToSignal).emit("incoming call", {
+      signal: signal,
+      from: callerID,
+    });
+  });
 
   // Listen for chat messages
-//   socket.on('chat message', async (encryptedMessage) => {
-//     console.log("🚀 ~ socket.on ~ encryptedMessage:", encryptedMessage)
-//     // Save the message to the database
-//     const newMessage = new ChatMessage({
-//       sender: encryptedMessage.sender,
-//       receiver: encryptedMessage.receiver,
-//       message: encryptedMessage.message
-//     });
-//     await newMessage.save();
-  
-//     // Broadcast the message
-//     // io.emit('chat message', encryptedMessage.message);
+  //   socket.on('chat message', async (encryptedMessage) => {
+  //     console.log("🚀 ~ socket.on ~ encryptedMessage:", encryptedMessage)
+  //     // Save the message to the database
+  //     const newMessage = new ChatMessage({
+  //       sender: encryptedMessage.sender,
+  //       receiver: encryptedMessage.receiver,
+  //       message: encryptedMessage.message
+  //     });
+  //     await newMessage.save();
 
-//     io.to(chatRoom).emit('chat message', encryptedMessage.message);
-//   });
+  //     // Broadcast the message
+  //     // io.emit('chat message', encryptedMessage.message);
+
+  //     io.to(chatRoom).emit('chat message', encryptedMessage.message);
+  //   });
 });
 const PORT = process.env.PORT || 3001;
 
@@ -103,41 +113,38 @@ const UserSchema = new mongoose.Schema({
   username: {
     type: String,
     unique: true, // This ensures that the username is unique in the database
-    required: true
+    required: true,
   },
-  mobile : {
-    type : Number, 
-    required: true
-  }
-  ,
+  mobile: {
+    type: Number,
+    required: true,
+  },
   password: {
     type: String,
-    required: true
+    required: true,
   },
   publicKey: {
     type: String,
-    required: true
+    required: true,
   }, // Known bug: Adding strict type checkings to ensure the required field and uniqueness of the entries
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Array of User IDs
 });
 const User = mongoose.model("User", UserSchema);
 
-app.use('/uploads', express.static('uploads'));
+app.use("/uploads", express.static("uploads"));
 
 const ChatMessageSchema = new mongoose.Schema({
-    image: {type : String }, 
-    sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    receiver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    message: {
-        nonce: String,
-        encryptedMessage: String
-    }, // Encrypted message
-    timestamp: { type: Date, default: Date.now },
-  });
-  
-  const ChatMessage = mongoose.model('ChatMessage', ChatMessageSchema);
-  
+  image: { type: String },
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  receiver: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  message: {
+    nonce: String,
+    encryptedMessage: String,
+  }, // Encrypted message
+  timestamp: { type: Date, default: Date.now },
+});
 
+const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);
 
 // Middleware
 app.use(bodyParser.json());
@@ -181,7 +188,11 @@ app.use(passport.initialize());
 
 passport.use(
   new LocalStrategy(
-    { usernameField: 'username', passwordField: 'password', passReqToCallback: true }, 
+    {
+      usernameField: "username",
+      passwordField: "password",
+      passReqToCallback: true,
+    },
     async (req, username, password, done) => {
       try {
         const user = await User.findOne({ username });
@@ -199,7 +210,7 @@ passport.use(
         // // Extract publicKey from the request body
         // const publicKey = req.body.publicKey;
         // console.log("🚀 ~ publicKey:", publicKey)
-        
+
         // if (publicKey) {
         //   // Update the publicKey for the user
         //   user.publicKey = publicKey;
@@ -244,7 +255,7 @@ app.get("/api/users/:userId/public-key", async (req, res) => {
     res.status(500).send("Server error");
   }
 });
- // known bugs which handles atomicity
+// known bugs which handles atomicity
 app.post("/api/register", async (req, res) => {
   const session = await mongoose.startSession(); // Start a session for the transaction
   session.startTransaction(); // Start the transaction
@@ -267,7 +278,7 @@ app.post("/api/register", async (req, res) => {
       username,
       password: hashedPassword,
       publicKey,
-      mobile
+      mobile,
     });
 
     // Save the user to the database within the transaction
@@ -285,31 +296,28 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-
 // to add a new friend
 // known bug : Adding a friend using can be improvised to mobile number which the other can easily have access to and also once added in the one friend side it can be added to other side as well.
 app.post("/api/users/:userId/add-friend", async (req, res) => {
   try {
     const userId = req.params.userId;
-    const friendId = req.body.friendId; // ID of the friend to add 
+    const friendId = req.body.friendId; // ID of the friend to add
 
     const user = await User.findById(userId);
-    if (!user ) {
+    if (!user) {
       return res.status(404).send("User not found");
     }
-    if( friendId == user.mobile ){
-      return res.status(404).send("Cannot add own number")
+    if (friendId == user.mobile) {
+      return res.status(404).send("Cannot add own number");
     }
 
-     // Find the friend by mobile number
-     const friend = await User.findOne({ mobile: friendId });
-     if (!friend) {
-       return res.status(404).send("Friend not found");
-     }
+    // Find the friend by mobile number
+    const friend = await User.findOne({ mobile: friendId });
+    if (!friend) {
+      return res.status(404).send("Friend not found");
+    }
 
-
-
-     if (!user.friends.includes(friend._id)) {
+    if (!user.friends.includes(friend._id)) {
       user.friends.push(friend._id);
       friend.friends.push(user._id);
       await user.save();
@@ -318,7 +326,6 @@ app.post("/api/users/:userId/add-friend", async (req, res) => {
     } else {
       res.status(200).send("Friend already in friends list");
     }
- 
 
     // // Add friendId to the user's friends list if not already present
     // if (!user.friends.includes(friendId)) {
@@ -350,54 +357,58 @@ app.get("/api/users/:userId/friends", async (req, res) => {
   }
 });
 
-
 //API Endpoint to Fetch Chat History:
-app.get('/api/chat/:userId/:friendId', async (req, res) => {
-    try {
-      const { userId, friendId } = req.params;
-      const chatHistory = await ChatMessage.find({
-        $or: [
-          { sender: userId, receiver: friendId },
-          { sender: friendId, receiver: userId }
-        ]
-      }).sort({ timestamp: 1 });
-      res.json(chatHistory);
-    } catch (error) {
-      res.status(500).send('Server error');
-    }
-  });
-  
+app.get("/api/chat/:userId/:friendId", async (req, res) => {
+  try {
+    const { userId, friendId } = req.params;
+    const chatHistory = await ChatMessage.find({
+      $or: [
+        { sender: userId, receiver: friendId },
+        { sender: friendId, receiver: userId },
+      ],
+    }).sort({ timestamp: 1 });
+    res.json(chatHistory);
+  } catch (error) {
+    res.status(500).send("Server error");
+  }
+});
 
 app.post(
   "/api/login",
   passport.authenticate("local", { session: false }),
   (req, res) => {
-    console.log("🚀 ~ req:", req.user)
+    console.log("🚀 ~ req:", req.user);
     // Generate a JWT token upon successful login
     const token = jwt.sign({ sub: req.user._id }, "your-secret-key", {
       expiresIn: "1h",
     });
 
-    res.json({ token, userId : req.user._id, publicKey : req.user.publicKey , username : req.user.username   });
+    res.json({
+      token,
+      userId: req.user._id,
+      publicKey: req.user.publicKey,
+      username: req.user.username,
+    });
   }
 );
 
-
 // Endpoint to handle image uploads
-app.post('/api/upload', upload.single('image'), async (req, res) => {
-    try {
-      // The file information will be in req.file
-      console.log(req.file);
-  
-      // You should save the file info in your database and link it to the message
-      // For example, save the file path and link it to the chat message
-  
-      res.status(200).json({ message: 'Image uploaded successfully', filePath: req.file.path });
-    } catch (error) {
-      res.status(500).send("Server error");
-    }
-  });
-  
+app.post("/api/upload", upload.single("image"), async (req, res) => {
+  try {
+    // The file information will be in req.file
+    console.log(req.file);
+
+    // You should save the file info in your database and link it to the message
+    // For example, save the file path and link it to the chat message
+
+    res.status(200).json({
+      message: "Image uploaded successfully",
+      filePath: req.file.path,
+    });
+  } catch (error) {
+    res.status(500).send("Server error");
+  }
+});
 
 // Start the server
 server.listen(PORT, () => {
