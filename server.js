@@ -21,19 +21,17 @@ const upload = multer({ dest: "uploads/" }); // This will save files to a folder
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    // origin: "http://localhost:3000", // This should match the URL of your React app
-    origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
+    origin: "*", // This should match the URL of your React app
+    // origin: "https://chatapp-weld-three.vercel.app", // This should match the URL of your React app
     methods: ["GET", "POST"],
   },
 });
 console.log("🚀 ~ io:", io);
+const users = {};
+
 io.on("connection", (socket) => {
   console.log("A user connected");
   console.log(`New client connected with socket ID: ${socket.id}`);
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected");
-  });
 
   // Join a chat room
   socket.on("join chat", (chatRoom) => {
@@ -68,14 +66,48 @@ io.on("connection", (socket) => {
   });
 
   // Video call
-  // console.log("before call");
-  socket.on("sending signal", ({ userToSignal, signal, callerID }) => {
-    console.log("call user to:", userToSignal);
-    // console.log("signalData:", signal);
-    io.to(userToSignal).emit("incoming call", {
-      signal: signal,
-      from: callerID,
+
+  socket.emit("me", socket.id);
+
+  socket.on("registerUser", (userId) => {
+    users[userId] = socket.id;
+    console.log(`74: User ${userId} mapped to socket ${socket.id}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected");
+    // Remove the user from the mapping when they disconnect
+    Object.keys(users).forEach((userId) => {
+      if (users[userId] === socket.id) {
+        delete users[userId];
+        console.log(`User ${userId} disconnected and removed from mapping`);
+      }
     });
+    socket.broadcast.emit("callEnded");
+  });
+
+  socket.on("callUser", (data) => {
+    console.log(
+      "🚀 ~ socket.on ~ data:",
+      data,
+      users[data.from],
+      users[data.userToCall]
+    );
+    console.log("🚀 ~ socket.on ~ users[data.from],:", users[data.from]);
+    console.log(
+      "🚀 ~ socket.on ~ users[data.userToCall]:",
+      users[data.userToCall]
+    );
+    io.to(users[data.userToCall]).emit("callUser", {
+      signal: data.signalData,
+      from: users[data.from],
+      name: data.name,
+    });
+  });
+
+  socket.on("answerCall", (data) => {
+    console.log("🚀 ~ socket.on ~ answerCall", data);
+    io.to(data.to).emit("callAccepted", data.signal);
   });
 
   // Listen for chat messages
